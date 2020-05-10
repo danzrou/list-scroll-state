@@ -10,8 +10,7 @@
 <ul #list>
   <li class="{{message.type}}"
       *ngFor="let message of messages$ | async; trackBy: trackById"
-      [attr.data-new]="message.isNew"
-      [attr.data-message]="message | json">{{message.content}}
+      [attr.data-id]="message.id">{{message.content}}
   </li>
 
   <div #bottom></div>

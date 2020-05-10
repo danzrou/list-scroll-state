@@ -15,5 +15,5 @@ export function createMessages(amount: number = 20) {
 
 export function createNewMessage() {
 	const type = getRandomType();
-	return createMessage(type, true);
+	return createMessage(type);
 }

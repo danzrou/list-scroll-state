@@ -1,8 +1,7 @@
-import { has } from '@siemplify/utils';
 import { Observable } from 'rxjs';
 
 function hasSupport() {
-  return has(window, 'IntersectionObserver');
+  return !!window.IntersectionObserver;
 }
 
 function mergeConfig(config: Partial<IntersectionObserverInit>) {

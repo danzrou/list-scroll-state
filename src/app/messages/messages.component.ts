@@ -1,110 +1,171 @@
-import { AfterViewInit, Component, ElementRef, OnInit, ViewChild } from '@angular/core';
+import {
+  AfterViewInit,
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  NgZone,
+  OnInit,
+  ViewChild,
+} from '@angular/core';
 import { combineLatest } from 'rxjs';
-import { filter, map, take, tap } from 'rxjs/operators';
+import {
+  delay,
+  distinctUntilChanged,
+  filter,
+  map,
+  switchMap,
+  take,
+  tap,
+} from 'rxjs/operators';
 import { debug } from '../debug';
 import { isInView } from '../in-view';
-import { observeNewMessages } from './new-items-observer';
 import { Message } from './state/message.model';
 import { MessagesQuery } from './state/messages.query';
 import { MessagesService } from './state/messages.service';
 import { UiQuery, UiService } from './ui/ui.state';
 
 @Component({
-	selector: 'app-messages',
-	templateUrl: './messages.component.html',
-	styleUrls: ['./messages.component.scss']
+  selector: 'app-messages',
+  templateUrl: './messages.component.html',
+  styleUrls: ['./messages.component.scss'],
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MessagesComponent implements OnInit, AfterViewInit {
+  @ViewChild('bottom', { read: ElementRef })
+  bottom: ElementRef<HTMLElement>;
 
-	@ViewChild('bottom', {read: ElementRef})
-	bottom: ElementRef<HTMLElement>;
+  @ViewChild('list', { read: ElementRef })
+  list: ElementRef<HTMLElement>;
 
-	@ViewChild('list', {read: ElementRef})
-	list: ElementRef<HTMLElement>;
+  messages$ = this.query.selectFiltered();
+  hasNew$ = combineLatest([
+    this.uiQuery.select('scrolledBottom'),
+    this.query.selectHasNew(),
+  ]).pipe(map(([scrolled, hasNew]) => !scrolled && hasNew));
 
-	messages$ = this.query.selectFiltered();
-	hasNew$ = combineLatest([
-		this.uiQuery.select('scrolledBottom'),
-		this.query.selectHasNew()
-	])
-		.pipe(
-			map(([scrolled, hasNew]) => !scrolled && hasNew),
-			tap((hasNew) => hasNew && this.createDivider())
-		)
+  constructor(
+    private query: MessagesQuery,
+    private service: MessagesService,
+    private uiService: UiService,
+    private uiQuery: UiQuery,
+    private ngZone: NgZone
+  ) {}
 
+  ngOnInit(): void {
+    this.hasNew$
+      .pipe(
+        filter((hasNew) => hasNew === true),
+        switchMap(() => this.query.selectNewIds())
+      )
+      .subscribe((ids) => {
+        if (this.uiQuery.getValue().scrolledBottom === false) {
+          setTimeout(() => this.onUnseenItems(ids));
+        }
+      });
+  }
 
-	constructor(private query: MessagesQuery,
-							private service: MessagesService,
-							private uiService: UiService,
-							private uiQuery: UiQuery) {
-	}
+  ngAfterViewInit() {
+    this.trackScroll();
+    combineLatest([
+      this.uiQuery.selectScroll().pipe(
+        distinctUntilChanged(),
+        filter(([was, current]) => was === true)
+      ),
+      this.query.selectHasNew().pipe(
+        distinctUntilChanged(),
+        filter((hasNew) => hasNew === true)
+      ),
+    ])
+      .pipe(distinctUntilChanged())
+      .subscribe(() => {
+        this.bottom.nativeElement.scrollIntoView({ behavior: 'auto' });
+      });
+  }
 
-	ngOnInit(): void {
-	}
+  onFilter(type) {
+    this.service.toggleFilter(type);
+  }
 
-	ngAfterViewInit() {
-		this.trackScroll();
-		this.createMutationObs();
-	}
+  onAdd() {
+    this.service.addMessage();
+  }
 
-	onFilter(type) {
-		this.service.toggleFilter(type);
-	}
+  scrollToNew() {
+    const divider = this.getDivider();
+    if (divider) {
+      divider.scrollIntoView({ behavior: 'smooth' });
+    }
+    this.service.markAllRead();
+  }
 
-	onAdd() {
-		this.service.addMessage();
-	}
+  trackById(index, item) {
+    return item.id;
+  }
 
-	scrollToNew() {
+  private trackScroll() {
+    isInView(this.bottom.nativeElement)
+      .pipe(debug('Bottom Scroll'))
+      .subscribe((inView) => {
+        this.uiService.setScrolled(inView);
+      });
+  }
 
-	}
+  private onUnseenItems(ids: Message['id'][]) {
+    this.ngZone.runOutsideAngular(() => {
+      this.addDivider(ids[0]);
+      this.createMessageObservers(ids);
+    });
+  }
 
-	trackById(index, item) {
-		return item.id;
-	}
+  private createMessageObservers(ids: Message['id'][]) {
+    for (const id of ids) {
+      const el = this.getMessageEl(id);
+      if (el) {
+        isInView(el)
+          .pipe(
+            filter((inView) => inView === true),
+            take(1),
+            tap(() => this.service.setMessageRead(id))
+          )
+          .subscribe();
+      }
+    }
+  }
 
-	private trackScroll() {
-		isInView(this.bottom.nativeElement)
-			.pipe(debug('Bottom Scroll'))
-			.subscribe(inView => {
-				this.uiService.setScrolled(inView);
-			})
-	}
+  private addDivider(id: Message['id']) {
+    const el = this.getMessageEl(id);
+    if (el) {
+      if (this.hasDivider()) {
+        return;
+      }
 
-	private createMutationObs() {
-		observeNewMessages(this.list.nativeElement)
-			.subscribe((items: NodeList) => {
-				console.log('New items', items);
-				const itemArr = Array.prototype.slice.call(items);
-				for (const item of itemArr) {
-					const el = item[0];
-					const msg = (el as HTMLElement).dataset['message'];
-					const message = JSON.parse(msg);
-					isInView(el).pipe(
-						filter(inView => inView === true),
-						take(1)
-					).subscribe(() => this.setItemNotNew(message))
-				}
-			});
-	}
+      const parent = el.parentNode;
+      const divider = createDivider();
+      parent.insertBefore(divider, el);
+      isInView(divider)
+        .pipe(
+          filter((inView) => inView === true),
+          delay(2000)
+        )
+        .subscribe(() => this.list.nativeElement.removeChild(divider));
+    }
+  }
 
-	private setItemNotNew(message: Message) {
-		console.log(`setItemNotNew`, message);
-		this.service.setMessageRead(message);
-	}
+  private getMessageEl(id: Message['id']) {
+    return this.list.nativeElement.querySelector(`[data-id="${id}"]`);
+  }
 
-	private createDivider() {
-		const element = document.createElement('div');
-		element.classList.add('divider');
-		const firstNewItem = getFirstNewItem(this.list.nativeElement)
-		console.log(firstNewItem);
-		if (firstNewItem) {
-			firstNewItem.insertBefore(element, firstNewItem);
-		}
-	}
+  private getDivider() {
+    return this.list.nativeElement.querySelector('.divider');
+  }
+
+  private hasDivider() {
+    return !!this.getDivider();
+  }
 }
 
-function getFirstNewItem(list: HTMLElement) {
-	const el = list.querySelector('[data-new=true]');
-	return el;
+function createDivider() {
+  const div = document.createElement('div');
+  div.classList.add('divider');
+  return div;
 }
