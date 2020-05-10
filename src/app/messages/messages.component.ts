@@ -1,11 +1,12 @@
 import { AfterViewInit, Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import { combineLatest } from 'rxjs';
 import { filter, map, take, tap } from 'rxjs/operators';
+import { debug } from '../debug';
+import { isInView } from '../in-view';
 import { observeNewMessages } from './new-items-observer';
 import { Message } from './state/message.model';
 import { MessagesQuery } from './state/messages.query';
 import { MessagesService } from './state/messages.service';
-import { debug, isInView } from '@siemplify/core/rxjs';
 import { UiQuery, UiService } from './ui/ui.state';
 
 @Component({
