@@ -1,0 +1,18 @@
+<div class="btn-group">
+  <button (click)="onFilter('Fact')">Fact</button>
+  <button (click)="onFilter('Task')">Task</button>
+  <button (click)="onFilter('Comment')">Comment</button>
+  <button (click)="onAdd()">Add item</button>
+  <button (click)="scrollToNew()" *ngIf="hasNew$ | async">Scroll to new</button>
+</div>
+
+<hr>
+<ul #list>
+  <li class="{{message.type}}"
+      *ngFor="let message of messages$ | async; trackBy: trackById"
+      [attr.data-new]="message.isNew"
+      [attr.data-message]="message | json">{{message.content}}
+  </li>
+
+  <div #bottom></div>
+</ul>
